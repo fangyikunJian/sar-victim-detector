@@ -11,17 +11,30 @@ thresholds needs no code change.
 ## 1. Quick start
 
 ```bash
-# real robot, RealSense D435i, COCO person as a stand-in victim detector
+# real robot, RealSense D435i - uses the bundled 3-class model by default
 ros2 launch victim_detector sar_detector.launch.py
 
 # simulation (Gazebo D455) - QoS default is fine, only the topic changes
 ros2 launch victim_detector sar_detector.launch.py \
     image_topic:=/d455/image
 
-# once the fine-tuned 3-class model lands
+# recommended for SAR: per-class thresholds + temporal aggregation
 ros2 launch victim_detector sar_detector.launch.py \
-    weights:=/opt/models/sar_3class.pt keep_classes:=""
+    class_conf:="mannequin:0.10,cone:0.20,first_aid:0.20" \
+    track_enable:=true track_bridge:=true
+
+# offline deployment, weights baked in elsewhere
+ros2 launch victim_detector sar_detector.launch.py \
+    weights:=/opt/models/sar_3class.pt
 ```
+
+The fine-tuned 3-class model ships with the package and is the **default** —
+the first command above needs no arguments.
+
+> **To pass an empty string on the command line, write `keep_classes:="''"`.**
+> Plain `keep_classes:=""` does not work: the shell strips the quotes, launch
+> receives `keep_classes:=` and rejects it as a malformed argument. An earlier
+> version of this file documented that broken form.
 
 ---
 
@@ -39,7 +52,8 @@ ros2 launch victim_detector sar_detector.launch.py \
 |---|---|---|
 | `~/detections` | `vision_msgs/Detection2DArray` | **always published, even when empty** |
 | `~/image_annotated` | `sensor_msgs/Image` | debug only, disable in production |
-| `~/status` | `std_msgs/String` | every 5 s: frames, skipped, inference ms, device |
+| `~/detections_confirmed` | `vision_msgs/Detection2DArray` | only with `track_enable`; temporally confirmed targets, `Detection2D.id` carries a stable track id |
+| `~/status` | `std_msgs/String` | every 5 s: frames, skipped, inference ms, device, confirmed |
 
 With the default node name the full names are `/sar_detector/detections` etc.
 
@@ -75,6 +89,34 @@ With the default node name the full names are `/sar_detector/detections` etc.
 | `publish_annotated` | `true` | turn off in production to save bandwidth |
 | `max_rate_hz` | `0.0` | throttle inference; 5–10 suggested on a 50 W Orin |
 | `log_every_n` | `30` | log one line every N frames |
+| `class_conf` | `` | per-class thresholds, e.g. `mannequin:0.10,cone:0.20`; empty = all use `conf` |
+| `track_enable` | `false` | temporal aggregation: confirm a target only after repeated hits |
+| `track_iou` | `0.3` | IoU for associating a detection with an existing track |
+| `track_min_hits` | `3` | hits required before a track is reported |
+| `track_max_misses` | `5` | frames a track survives without a detection |
+| `track_bridge` | `false` | keep reporting a confirmed track through a gap (raises effective recall; box goes stale) |
+
+### Why per-class thresholds
+
+One global `conf` is wrong for this model. Measured over 5 folds: `cone` is
+best at 0.20 (recall 0.92, precision 0.86), while `mannequin` needs 0.10 to
+reach any useful recall. A single threshold can only compromise between them.
+
+### Why temporal aggregation
+
+Per-frame mannequin recall is ~0.57, but the robot is moving: it sees a victim
+across many frames from changing viewpoints, and those failures are not fully
+correlated.
+
+- `track_bridge:=false` — report only when the target is detected **this**
+  frame *and* has been confirmed. Suppresses flickering false positives;
+  **does not change recall**.
+- `track_bridge:=true` — also keep reporting a confirmed target through short
+  gaps. **This is the setting that raises effective recall**, at the cost of a
+  stale box during the gap.
+
+`~/detections` is unchanged either way — raw, per frame. Nothing downstream
+breaks if you ignore the new topic.
 
 ---
 

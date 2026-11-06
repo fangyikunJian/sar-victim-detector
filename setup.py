@@ -13,6 +13,8 @@ setup(
         ("share/" + package_name, ["package.xml"]),
         ("share/" + package_name + "/worlds", glob("worlds/*")),
         ("share/" + package_name + "/launch", glob("launch/*.launch.py")),
+        # 权重必须装进 share，否则 launch 里的默认权重路径指向不存在的文件
+        ("share/" + package_name + "/models", glob("models/*.pt")),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
