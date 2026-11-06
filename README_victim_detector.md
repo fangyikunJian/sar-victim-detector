@@ -21,7 +21,7 @@ ros2 launch victim_detector sar_detector.launch.py \
 # recommended for SAR: per-class thresholds + temporal aggregation
 ros2 launch victim_detector sar_detector.launch.py \
     class_conf:="mannequin:0.10,cone:0.20,first_aid:0.20" \
-    track_enable:=true track_bridge:=true
+    track_enable:=true
 
 # offline deployment, weights baked in elsewhere
 ros2 launch victim_detector sar_detector.launch.py \
@@ -94,7 +94,7 @@ With the default node name the full names are `/sar_detector/detections` etc.
 | `track_iou` | `0.3` | IoU for associating a detection with an existing track |
 | `track_min_hits` | `3` | hits required before a track is reported |
 | `track_max_misses` | `5` | frames a track survives without a detection |
-| `track_bridge` | `false` | keep reporting a confirmed track through a gap (raises effective recall; box goes stale) |
+| `track_bridge` | `false` | keep reporting a confirmed track through a gap. **Measured: recovers no extra victim and adds 17% more false positives. Leave it off.** |
 
 ### Why per-class thresholds
 
@@ -108,12 +108,26 @@ Per-frame mannequin recall is ~0.57, but the robot is moving: it sees a victim
 across many frames from changing viewpoints, and those failures are not fully
 correlated.
 
-- `track_bridge:=false` — report only when the target is detected **this**
-  frame *and* has been confirmed. Suppresses flickering false positives;
-  **does not change recall**.
-- `track_bridge:=true` — also keep reporting a confirmed target through short
-  gaps. **This is the setting that raises effective recall**, at the cost of a
-  stale box during the gap.
+Measured over 12 victims, each as a synthetic 24-frame approach sequence:
+
+| | recall | false positives |
+|---|---|---|
+| raw, per frame | 0.801 | 150 |
+| at least once in the pass *(ceiling)* | 0.917 | — |
+| `track_bridge:=false` | **0.917** | **96 (-36%)** |
+| `track_bridge:=true` | 0.917 | 176 (+17%) |
+
+**Leave `track_bridge` off.** Confirmation alone already reaches the ceiling
+of what is recoverable, and cuts false positives by a third. Bridging gaps
+recovered no additional victim and only added false positives. An earlier
+version of this file recommended `track_bridge:=true` on the strength of
+an argument rather than a measurement.
+
+Caveat: the sequences are synthetic pans over held-out stills, not real
+robot footage. Per-frame recall in that regime is 0.801 versus 0.569 on the
+real cross-validation, so the regime is easier than the arena and the
+absolute numbers do not transfer. The *ordering* of the two modes is the
+part worth keeping.
 
 `~/detections` is unchanged either way — raw, per frame. Nothing downstream
 breaks if you ignore the new topic.

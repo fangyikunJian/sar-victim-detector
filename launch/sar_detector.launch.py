@@ -11,7 +11,7 @@
 搜救推荐配置（分类别阈值 + 时序聚合，压误报同时提有效召回）：
     ros2 launch victim_detector sar_detector.launch.py \\
         class_conf:="mannequin:0.10,cone:0.20,first_aid:0.20" \\
-        track_enable:=true track_bridge:=true
+        track_enable:=true
 
 离线部署换权重：
     ros2 launch victim_detector sar_detector.launch.py \\
